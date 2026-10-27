@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SKAM Voice</title>
+<style>
+:root{--p:#a855f7;--p2:#7c3aed;--bg:#07040f;--card:#120a22;--tx:#f3e8ff;--mut:#9f8bc4}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:radial-gradient(ellipse at 50% 0%,#2a1050 0%,var(--bg) 60%);color:var(--tx);font-family:system-ui,"Segoe UI",Tahoma,sans-serif;overflow-x:hidden;display:flex;align-items:center;justify-content:center;padding:20px}
+.floor{position:fixed;left:-50%;right:-50%;bottom:-10%;height:55%;background:
+ linear-gradient(var(--p2) 1px,transparent 1px) 0 0/60px 60px,
+ linear-gradient(90deg,var(--p2) 1px,transparent 1px) 0 0/60px 60px;
+ transform:perspective(400px) rotateX(70deg);opacity:.25;animation:g 4s linear infinite;mask-image:linear-gradient(transparent,#000 70%)}
+@keyframes g{to{background-position:0 60px}}
+.wrap{perspective:1000px;width:100%;max-width:420px;position:relative;z-index:1}
+.card{background:linear-gradient(160deg,#1a0f33,var(--card));border:1px solid #3b1f6b;border-radius:24px;padding:28px 24px;text-align:center;
+ box-shadow:0 30px 80px #7c3aed40,0 0 0 1px #a855f720 inset;transform-style:preserve-3d;transition:transform .15s}
+.scene{width:90px;height:90px;margin:0 auto 22px;perspective:500px;transform:translateZ(50px)}
+.cube{width:100%;height:100%;position:relative;transform-style:preserve-3d;animation:r 9s linear infinite}
+.cube i{position:absolute;inset:0;border:2px solid var(--p);background:#7c3aed22;box-shadow:0 0 25px #a855f780 inset,0 0 15px #a855f760;display:flex;align-items:center;justify-content:center;font:900 38px/1 system-ui;color:#e9d5ff;font-style:normal}
+.cube i:nth-child(1){transform:translateZ(45px)}.cube i:nth-child(2){transform:rotateY(180deg) translateZ(45px)}
+.cube i:nth-child(3){transform:rotateY(90deg) translateZ(45px)}.cube i:nth-child(4){transform:rotateY(-90deg) translateZ(45px)}
+.cube i:nth-child(5){transform:rotateX(90deg) translateZ(45px)}.cube i:nth-child(6){transform:rotateX(-90deg) translateZ(45px)}
+@keyframes r{from{transform:rotateX(-20deg) rotateY(0)}to{transform:rotateX(-20deg) rotateY(360deg)}}
+h1{font-size:34px;letter-spacing:2px;background:linear-gradient(90deg,#e9d5ff,var(--p),#6d28d9);-webkit-background-clip:text;background-clip:text;color:transparent;transform:translateZ(30px);direction:ltr}
+p.sub{color:var(--mut);margin:8px 0 22px;font-size:14px;line-height:1.7}
+button{font:700 17px system-ui;border:0;border-radius:14px;padding:15px 20px;width:100%;cursor:pointer;color:#fff;transition:transform .12s,box-shadow .12s;transform:translateZ(25px)}
+.main{background:linear-gradient(135deg,var(--p),var(--p2));box-shadow:0 8px 0 #4c1d95,0 14px 30px #7c3aed70}
+.main:active{transform:translateY(6px) translateZ(25px);box-shadow:0 2px 0 #4c1d95}
+.off{background:linear-gradient(135deg,#dc2626,#7f1d1d);box-shadow:0 8px 0 #450a0a,0 14px 30px #dc262660}
+.off:active{transform:translateY(6px);box-shadow:0 2px 0 #450a0a}
+.status{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:18px;font-size:15px}
+.dot{width:10px;height:10px;border-radius:50%;background:#22c55e;box-shadow:0 0 10px #22c55e}
+.dot.m{background:#ef4444;box-shadow:0 0 10px #ef4444}
+.meter{height:6px;background:#2a1650;border-radius:9px;overflow:hidden;margin:0 0 18px}
+.meter b{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--p2),#e9d5ff);transition:width .08s}
+.list{margin-top:20px;text-align:right;font-size:14px}
+.list h3{font-size:13px;color:var(--mut);margin-bottom:8px;font-weight:600}
+.peer{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:#1b0f35;margin-bottom:6px}
+.peer span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{width:60px;height:5px;background:#2a1650;border-radius:9px;overflow:hidden}
+.bar b{display:block;height:100%;background:var(--p);width:0;transition:width .3s}
+.err{color:#fca5a5;margin-top:14px;font-size:14px}
+.hint{margin-top:16px;color:var(--mut);font-size:13px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="floor"></div>
+<div class="wrap">
+  <div class="card" id="card">
+    <div class="scene"><div class="cube"><i>S</i><i>K</i><i>A</i><i>M</i><i>V</i><i>●</i></div></div>
+    <h1>SKAM Voice</h1>
+
+    <div id="start">
+      <p class="sub">شات صوتي قريب داخل الماب.<br>اضغط تفعيل المايك ثم ارجع للعبة.</p>
+      <button class="main" id="enable">🎤 تفعيل المايك</button>
+    </div>
+
+    <div id="live" class="hide">
+      <p class="sub" style="margin-bottom:14px">تم الربط بحسابك ✅</p>
+      <div class="status"><span class="dot" id="dot"></span><span id="who"></span></div>
+      <div class="meter"><b id="lvl"></b></div>
+      <button class="off" id="mute">كتم</button>
+      <p class="hint">ارجع لروبلوكس — خلّ هذي الصفحة مفتوحة بالخلفية.</p>
+      <div class="list"><h3>اللاعبين القريبين</h3><div id="peers"></div></div>
+    </div>
+    <div class="err" id="err"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const token = new URLSearchParams(location.search).get('t');
+const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+
+// ميل البطاقة 3D مع الماوس
+const wrap = document.querySelector('.wrap'), card = $('card');
+wrap.addEventListener('mousemove', e => {
+  const r = card.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+  card.style.transform = `rotateY(${x * 14}deg) rotateX(${-y * 14}deg)`;
+});
+wrap.addEventListener('mouseleave', () => card.style.transform = '');
+
+let ws, stream, ctx, myMuted = false;
+const pcs = {}, gains = {}, names = {}, vols = {}, pmute = {};
+
+if (!token) $('err').textContent = 'ما فيه رابط. انسخ الرابط من داخل اللعبة.';
+
+$('enable').onclick = async () => {
+  if (!token) return;
+  $('err').textContent = '';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (e) { $('err').textContent = 'ما قدرنا نوصل للمايك. اسمح للمتصفح باستخدامه.'; return; }
+  ctx = new (window.AudioContext || window.webkitAudioContext)(); ctx.resume();
+  meter();
+  connect();
+};
+
+function connect() {
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/?t=' + encodeURIComponent(token));
+  ws.onmessage = async ev => {
+    const m = JSON.parse(ev.data);
+    if (m.type === 'error') { $('err').textContent = m.msg; }
+    else if (m.type === 'kicked') { $('err').textContent = 'طلعت من الماب. ادخل وخذ رابط جديد.'; stream.getTracks().forEach(t => t.stop()); }
+    else if (m.type === 'hello') {
+      $('start').classList.add('hide'); $('live').classList.remove('hide');
+      $('who').textContent = m.me.name + '  (@' + m.me.userId + ')';
+      setMuted(false);
+      for (const p of m.peers) { names[p.userId] = p.name; pmute[p.userId] = p.muted; await call(p.userId); }
+      renderPeers();
+    }
+    else if (m.type === 'peer-join') { names[m.peer.userId] = m.peer.name; renderPeers(); }
+    else if (m.type === 'peer-leave') { closePeer(m.userId); renderPeers(); }
+    else if (m.type === 'peer-mute') { pmute[m.userId] = m.muted; renderPeers(); }
+    else if (m.type === 'muted') { setMuted(m.muted, true); }
+    else if (m.type === 'vol') { Object.assign(vols, m.vols); applyVols(); renderPeers(); }
+    else if (m.type === 'signal') { await onSignal(m.from, m.data); }
+  };
+  ws.onclose = () => { if (stream && stream.active) setTimeout(connect, 2000); };
+}
+
+function setMuted(v, fromServer) {
+  myMuted = v;
+  stream.getAudioTracks().forEach(t => t.enabled = !v);
+  $('mute').textContent = v ? 'فتح المايك' : 'كتم';
+  $('mute').className = v ? 'main' : 'off';
+  $('dot').className = 'dot' + (v ? ' m' : '');
+  if (!fromServer && ws.readyState === 1) ws.send(JSON.stringify({ type: 'mute', muted: v }));
+}
+$('mute').onclick = () => setMuted(!myMuted);
+
+// ===== WebRTC =====
+function makePC(id) {
+  const pc = new RTCPeerConnection(ICE); pcs[id] = pc;
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+  pc.onicecandidate = e => e.candidate && sig(id, { ice: e.candidate });
+  pc.ontrack = e => {
+    const s = e.streams[0];
+    const a = new Audio(); a.srcObject = s; a.muted = true; a.play().catch(() => {}); // ضروري لكروم
+    const src = ctx.createMediaStreamSource(s), g = ctx.createGain();
+    g.gain.value = vols[id] ?? 0; src.connect(g); g.connect(ctx.destination);
+    gains[id] = g;
+  };
+  return pc;
+}
+const sig = (to, data) => ws.send(JSON.stringify({ type: 'signal', to, data }));
+async function call(id) {
+  const pc = makePC(id);
+  await pc.setLocalDescription(await pc.createOffer());
+  sig(id, { sdp: pc.localDescription });
+}
+async function onSignal(from, d) {
+  let pc = pcs[from];
+  if (d.sdp) {
+    if (d.sdp.type === 'offer') {
+      pc = makePC(from);
+      await pc.setRemoteDescription(d.sdp);
+      await pc.setLocalDescription(await pc.createAnswer());
+      sig(from, { sdp: pc.localDescription });
+    } else if (pc) await pc.setRemoteDescription(d.sdp);
+  } else if (d.ice && pc) { try { await pc.addIceCandidate(d.ice); } catch {} }
+}
+function closePeer(id) {
+  if (pcs[id]) pcs[id].close();
+  delete pcs[id]; delete gains[id]; delete vols[id]; delete names[id]; delete pmute[id];
+}
+function applyVols() {
+  for (const id in gains) gains[id].gain.setTargetAtTime(vols[id] ?? 0, ctx.currentTime, 0.1);
+}
+function renderPeers() {
+  const box = $('peers'); box.innerHTML = '';
+  const ids = Object.keys(names).filter(id => (vols[id] ?? 0) > 0);
+  if (!ids.length) { box.innerHTML = '<div class="peer"><span style="color:var(--mut)">ما فيه أحد قريب</span></div>'; return; }
+  for (const id of ids) {
+    const d = document.createElement('div'); d.className = 'peer';
+    d.innerHTML = `<span></span><div class="bar"><b style="width:${Math.round((vols[id] || 0) * 100)}%"></b></div><small>${pmute[id] ? '🔇' : '🎤'}</small>`;
+    d.firstChild.textContent = names[id]; box.appendChild(d);
+  }
+}
+// مؤشر مستوى الصوت
+function meter() {
+  const an = ctx.createAnalyser(); an.fftSize = 256;
+  ctx.createMediaStreamSource(stream).connect(an);
+  const buf = new Uint8Array(an.frequencyBinCount);
+  (function loop() {
+    an.getByteTimeDomainData(buf);
+    let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128));
+    $('lvl').style.width = myMuted ? '0%' : Math.min(100, m * 1.6) + '%';
+    requestAnimationFrame(loop);
+  })();
+}
+</script>
+</body>
+</html>
