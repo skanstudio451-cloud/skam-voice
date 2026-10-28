@@ -42,6 +42,8 @@ button{font:700 17px system-ui;border:0;border-radius:14px;padding:15px 20px;wid
 .peer span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bar{width:60px;height:5px;background:#2a1650;border-radius:9px;overflow:hidden}
 .bar b{display:block;height:100%;background:var(--p);width:0;transition:width .3s}
+input.code{width:100%;background:#1b0f35;border:2px solid #3b1f6b;border-radius:14px;color:#f3e8ff;text-align:center;font:800 30px/1 ui-monospace,Consolas,monospace;letter-spacing:8px;padding:14px 10px;margin-bottom:14px;text-transform:uppercase;outline:none;direction:ltr}
+input.code:focus{border-color:var(--p)}
 .err{color:#fca5a5;margin-top:14px;font-size:14px}
 .hint{margin-top:16px;color:var(--mut);font-size:13px}
 .hide{display:none}
@@ -55,8 +57,15 @@ button{font:700 17px system-ui;border:0;border-radius:14px;padding:15px 20px;wid
     <h1>SKAM Voice</h1>
 
     <div id="start">
-      <p class="sub">شات صوتي قريب داخل الماب.<br>اضغط تفعيل المايك ثم ارجع للعبة.</p>
-      <button class="main" id="enable">🎤 تفعيل المايك</button>
+      <div id="codeBox" class="hide">
+        <p class="sub">اكتب الكود اللي ظهر لك في اللعبة<br>(6 حروف وأرقام)</p>
+        <input class="code" id="code" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123">
+        <button class="main" id="codeGo">دخول</button>
+      </div>
+      <div id="enableBox" class="hide">
+        <p class="sub" id="enableSub">شات صوتي قريب داخل الماب.<br>اضغط تفعيل المايك ثم ارجع للعبة.</p>
+        <button class="main" id="enable">🎤 تفعيل المايك</button>
+      </div>
     </div>
 
     <div id="live" class="hide">
@@ -73,7 +82,7 @@ button{font:700 17px system-ui;border:0;border-radius:14px;padding:15px 20px;wid
 
 <script>
 const $ = id => document.getElementById(id);
-const token = new URLSearchParams(location.search).get('t');
+let token = new URLSearchParams(location.search).get('t');
 const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
 
 // ميل البطاقة 3D مع الماوس
@@ -89,7 +98,33 @@ let ws, stream, ctx, myMuted = false;
 const pcs = {}, nodes = {}, names = {}, vols = {}, pmute = {};
 let lastVol = Date.now();
 
-if (!token) $('err').textContent = 'ما فيه رابط. انسخ الرابط من داخل اللعبة.';
+if (token) $('enableBox').classList.remove('hide');
+else $('codeBox').classList.remove('hide');
+
+async function useCode() {
+  const c = $('code').value.trim().toUpperCase();
+  $('err').textContent = '';
+  if (c.length !== 6) { $('err').textContent = 'الكود لازم يكون 6 حروف وأرقام.'; return; }
+  $('codeGo').disabled = true;
+  try {
+    const r = await fetch('/api/resolve?c=' + encodeURIComponent(c));
+    const d = await r.json();
+    if (r.ok && d.token) {
+      token = d.token;
+      $('codeBox').classList.add('hide');
+      $('enableSub').innerHTML = 'أهلاً <b></b> 👋<br>اضغط تفعيل المايك ثم ارجع للعبة.';
+      $('enableSub').querySelector('b').textContent = d.name;
+      $('enableBox').classList.remove('hide');
+    } else if (r.status === 429) {
+      $('err').textContent = 'محاولات كثيرة غلط. انتظر 10 دقايق وجرّب.';
+    } else {
+      $('err').textContent = 'الكود غير صحيح، أو مستخدم من قبل. تأكد منه أو ادخل الماب من جديد.';
+    }
+  } catch { $('err').textContent = 'تعذّر الاتصال، جرّب مرة ثانية.'; }
+  $('codeGo').disabled = false;
+}
+$('codeGo').onclick = useCode;
+$('code').addEventListener('keydown', e => { if (e.key === 'Enter') useCode(); });
 
 $('enable').onclick = async () => {
   if (!token) return;
@@ -214,4 +249,4 @@ setInterval(() => {
 }, 1000);
 </script>
 </body>
-</html> 
+</html>
