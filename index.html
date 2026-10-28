@@ -86,7 +86,8 @@ wrap.addEventListener('mousemove', e => {
 wrap.addEventListener('mouseleave', () => card.style.transform = '');
 
 let ws, stream, ctx, myMuted = false;
-const pcs = {}, gains = {}, names = {}, vols = {}, pmute = {};
+const pcs = {}, nodes = {}, names = {}, vols = {}, pmute = {};
+let lastVol = Date.now();
 
 if (!token) $('err').textContent = 'ما فيه رابط. انسخ الرابط من داخل اللعبة.';
 
@@ -110,6 +111,8 @@ function connect() {
     else if (m.type === 'hello') {
       $('start').classList.add('hide'); $('live').classList.remove('hide');
       $('who').textContent = m.me.name + '  (@' + m.me.userId + ')';
+      for (const id of Object.keys(pcs)) closePeer(id);   // تنظيف أي اتصالات قديمة بعد إعادة الاتصال
+      lastVol = Date.now();
       setMuted(false);
       for (const p of m.peers) { names[p.userId] = p.name; pmute[p.userId] = p.muted; await call(p.userId); }
       renderPeers();
@@ -118,7 +121,7 @@ function connect() {
     else if (m.type === 'peer-leave') { closePeer(m.userId); renderPeers(); }
     else if (m.type === 'peer-mute') { pmute[m.userId] = m.muted; renderPeers(); }
     else if (m.type === 'muted') { setMuted(m.muted, true); }
-    else if (m.type === 'vol') { Object.assign(vols, m.vols); applyVols(); renderPeers(); }
+    else if (m.type === 'vol') { lastVol = Date.now(); for (const k in vols) delete vols[k]; Object.assign(vols, m.vols); applyVols(); renderPeers(); }
     else if (m.type === 'signal') { await onSignal(m.from, m.data); }
   };
   ws.onclose = () => { if (stream && stream.active) setTimeout(connect, 2000); };
@@ -135,16 +138,25 @@ function setMuted(v, fromServer) {
 $('mute').onclick = () => setMuted(!myMuted);
 
 // ===== WebRTC =====
+function dropAudio(id) {
+  const n = nodes[id];
+  if (!n) return;
+  try { n.src.disconnect(); n.g.disconnect(); } catch {}
+  try { n.a.pause(); n.a.srcObject = null; } catch {}
+  delete nodes[id];
+}
 function makePC(id) {
+  if (pcs[id]) { try { pcs[id].close(); } catch {} dropAudio(id); }   // لا نخلي اتصالين لنفس اللاعب
   const pc = new RTCPeerConnection(ICE); pcs[id] = pc;
   stream.getTracks().forEach(t => pc.addTrack(t, stream));
   pc.onicecandidate = e => e.candidate && sig(id, { ice: e.candidate });
   pc.ontrack = e => {
+    dropAudio(id);
     const s = e.streams[0];
     const a = new Audio(); a.srcObject = s; a.muted = true; a.play().catch(() => {}); // ضروري لكروم
     const src = ctx.createMediaStreamSource(s), g = ctx.createGain();
     g.gain.value = vols[id] ?? 0; src.connect(g); g.connect(ctx.destination);
-    gains[id] = g;
+    nodes[id] = { a, src, g };
   };
   return pc;
 }
@@ -166,11 +178,12 @@ async function onSignal(from, d) {
   } else if (d.ice && pc) { try { await pc.addIceCandidate(d.ice); } catch {} }
 }
 function closePeer(id) {
-  if (pcs[id]) pcs[id].close();
-  delete pcs[id]; delete gains[id]; delete vols[id]; delete names[id]; delete pmute[id];
+  if (pcs[id]) { try { pcs[id].close(); } catch {} }
+  dropAudio(id);
+  delete pcs[id]; delete vols[id]; delete names[id]; delete pmute[id];
 }
 function applyVols() {
-  for (const id in gains) gains[id].gain.setTargetAtTime(vols[id] ?? 0, ctx.currentTime, 0.1);
+  for (const id in nodes) nodes[id].g.gain.setTargetAtTime(vols[id] ?? 0, ctx.currentTime, 0.1);
 }
 function renderPeers() {
   const box = $('peers'); box.innerHTML = '';
@@ -194,6 +207,11 @@ function meter() {
     requestAnimationFrame(loop);
   })();
 }
+// حماية: لو انقطعت تحديثات المسافة أكثر من 4 ثواني نكتم الكل بدل ما يبقى الصوت شغال
+setInterval(() => {
+  if (!ctx || Date.now() - lastVol < 4000) return;
+  for (const id in nodes) nodes[id].g.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
+}, 1000);
 </script>
 </body>
-</html>
+</html> 
