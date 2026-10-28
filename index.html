@@ -42,6 +42,13 @@ button{font:700 17px system-ui;border:0;border-radius:14px;padding:15px 20px;wid
 .peer span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bar{width:60px;height:5px;background:#2a1650;border-radius:9px;overflow:hidden}
 .bar b{display:block;height:100%;background:var(--p);width:0;transition:width .3s}
+.alt{background:linear-gradient(135deg,#4c1d95,#1e1b4b);box-shadow:0 8px 0 #1e1b4b,0 14px 30px #4f46e540;margin-top:16px}
+.alt:active{transform:translateY(6px);box-shadow:0 2px 0 #1e1b4b}
+.fxgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0 6px}
+button.fx{padding:14px 6px;font-size:15px;background:#1b0f35;border:2px solid #3b1f6b;box-shadow:none;transform:none;border-radius:14px}
+button.fx.on{border-color:var(--p);background:linear-gradient(135deg,#6d28d9,#4c1d95);box-shadow:0 0 18px #a855f780}
+button.sm{padding:11px 12px;font-size:14px;background:#1b0f35;border:2px solid #3b1f6b;box-shadow:none;transform:none;margin-top:10px;border-radius:12px}
+button.sm.on{border-color:#22c55e}
 input.code{width:100%;background:#1b0f35;border:2px solid #3b1f6b;border-radius:14px;color:#f3e8ff;text-align:center;font:800 30px/1 ui-monospace,Consolas,monospace;letter-spacing:8px;padding:14px 10px;margin-bottom:14px;text-transform:uppercase;outline:none;direction:ltr}
 input.code:focus{border-color:var(--p)}
 .err{color:#fca5a5;margin-top:14px;font-size:14px}
@@ -73,8 +80,17 @@ input.code:focus{border-color:var(--p)}
       <div class="status"><span class="dot" id="dot"></span><span id="who"></span></div>
       <div class="meter"><b id="lvl"></b></div>
       <button class="off" id="mute">كتم</button>
+      <button class="alt" id="fxOpen">🎭 تغيير الصوت</button>
       <p class="hint">ارجع لروبلوكس — خلّ هذي الصفحة مفتوحة بالخلفية.</p>
       <div class="list"><h3>اللاعبين القريبين</h3><div id="peers"></div></div>
+    </div>
+    <div id="fxPanel" class="hide">
+      <p class="sub" style="margin-bottom:0">🎭 غيّر صوتك<br>اللي حولك بيسمعونك بالصوت اللي تختاره</p>
+      <div class="fxgrid" id="fxGrid"></div>
+      <button class="alt" id="fxReset" style="margin-top:8px">🔄 رجّع صوتي الطبيعي</button>
+      <button class="sm" id="fxMon">🎧 اسمع نفسك: مقفل (استخدم سماعة)</button>
+      <button class="sm" id="fxBack">← رجوع</button>
+      <div class="err" id="fxErr"></div>
     </div>
     <div class="err" id="err"></div>
   </div>
@@ -94,7 +110,7 @@ wrap.addEventListener('mousemove', e => {
 });
 wrap.addEventListener('mouseleave', () => card.style.transform = '');
 
-let ws, stream, ctx, myMuted = false;
+let ws, stream, ctx, myMuted = false, currentTrack = null;
 const pcs = {}, nodes = {}, names = {}, vols = {}, pmute = {};
 let lastVol = Date.now();
 
@@ -183,7 +199,7 @@ function dropAudio(id) {
 function makePC(id) {
   if (pcs[id]) { try { pcs[id].close(); } catch {} dropAudio(id); }   // لا نخلي اتصالين لنفس اللاعب
   const pc = new RTCPeerConnection(ICE); pcs[id] = pc;
-  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+  pc.addTrack(currentTrack || stream.getAudioTracks()[0], stream);   // الصوت الحالي (طبيعي أو معدّل)
   pc.onicecandidate = e => e.candidate && sig(id, { ice: e.candidate });
   pc.ontrack = e => {
     dropAudio(id);
@@ -242,6 +258,161 @@ function meter() {
     requestAnimationFrame(loop);
   })();
 }
+
+// ================= تغيير الصوت =================
+// مغيّر طبقة الصوت (Pitch Shifter) داخل AudioWorklet
+const WORKLET = `
+class PS extends AudioWorkletProcessor {
+  static get parameterDescriptors() { return [{ name: 'ratio', defaultValue: 1 }]; }
+  constructor() {
+    super();
+    this.N = 65536; this.buf = new Float32Array(this.N);
+    this.w = 0; this.phase = 0; this.W = Math.floor(sampleRate * 0.05);
+  }
+  rd(d) {
+    const pos = this.w - d, i0 = Math.floor(pos), f = pos - i0, m = this.N - 1;
+    const a = this.buf[i0 & m], b = this.buf[(i0 + 1) & m];
+    return a + (b - a) * f;
+  }
+  g(p) { const s = Math.sin(Math.PI * p); return s * s; }
+  process(inputs, outputs, params) {
+    const inp = inputs[0] && inputs[0][0], out = outputs[0][0];
+    if (!out) return true;
+    const ratio = params.ratio[0], W = this.W, m = this.N - 1;
+    for (let i = 0; i < out.length; i++) {
+      this.buf[this.w] = inp ? inp[i] : 0;
+      const p1 = this.phase, p2 = (this.phase + 0.5) % 1;
+      out[i] = this.rd(p1 * W + 1) * this.g(p1) + this.rd(p2 * W + 1) * this.g(p2);
+      this.phase += (1 - ratio) / W;
+      if (this.phase >= 1) this.phase -= 1; else if (this.phase < 0) this.phase += 1;
+      this.w = (this.w + 1) & m;
+    }
+    return true;
+  }
+}
+registerProcessor('ps', PS);`;
+
+const FX = {
+  deep:     { name: '👨 رجال ثقيل', ratio: 0.72 },
+  girl:     { name: '👩 صوت بنت',   ratio: 1.35 },
+  kid:      { name: '👶 طفل',       ratio: 1.7 },
+  squirrel: { name: '🐿️ سنجاب',    ratio: 2.0 },
+  monster:  { name: '👹 وحش',       ratio: 0.55, dist: 30, gain: 0.9 },
+  demon:    { name: '😈 شيطان',     ratio: 0.6, echo: { t: 0.12, fb: 0.35, wet: 0.4 } },
+  robot:    { name: '🤖 روبوت',     ring: 55 },
+  alien:    { name: '👽 فضائي',     ratio: 1.25, vib: 7 },
+  cave:     { name: '🏔️ كهف',      echo: { t: 0.28, fb: 0.45, wet: 0.55 } },
+  radio:    { name: '📻 راديو',     band: [500, 3200], dist: 15, gain: 1.6 },
+};
+
+let fxKey = 'normal', chain = null, srcNode = null, dest = null, mon = null, procTrack = null, workletReady = false, monOn = false;
+
+function distCurve(k) {
+  const n = 44100, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = i * 2 / n - 1; c[i] = (3 + k) * x * 20 * (Math.PI / 180) / (Math.PI + k * Math.abs(x)); }
+  return c;
+}
+
+function makeChain(cfg) {
+  const nodes = [], oscs = [];
+  const input = ctx.createGain();
+  let cur = input;
+  const add = n => { cur.connect(n); cur = n; nodes.push(n); return n; };
+
+  if (cfg.ratio) {
+    const ps = new AudioWorkletNode(ctx, 'ps', { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] });
+    ps.parameters.get('ratio').value = cfg.ratio;
+    add(ps);
+  }
+  if (cfg.vib) {
+    const d = add(ctx.createDelay(0.05)); d.delayTime.value = 0.01;
+    const o = ctx.createOscillator(); o.frequency.value = cfg.vib;
+    const depth = ctx.createGain(); depth.gain.value = 0.004;
+    o.connect(depth); depth.connect(d.delayTime); o.start(); oscs.push(o); nodes.push(depth);
+  }
+  if (cfg.ring) {
+    const g = add(ctx.createGain()); g.gain.value = 0;
+    const o = ctx.createOscillator(); o.frequency.value = cfg.ring; o.connect(g.gain); o.start(); oscs.push(o);
+  }
+  if (cfg.band) {
+    const hp = add(ctx.createBiquadFilter()); hp.type = 'highpass'; hp.frequency.value = cfg.band[0];
+    const lp = add(ctx.createBiquadFilter()); lp.type = 'lowpass'; lp.frequency.value = cfg.band[1];
+  }
+  if (cfg.dist) {
+    const w = add(ctx.createWaveShaper()); w.curve = distCurve(cfg.dist); w.oversample = '4x';
+  }
+  if (cfg.echo) {
+    const merge = ctx.createGain(), d = ctx.createDelay(1), fb = ctx.createGain(), wet = ctx.createGain();
+    d.delayTime.value = cfg.echo.t; fb.gain.value = cfg.echo.fb; wet.gain.value = cfg.echo.wet;
+    cur.connect(merge); cur.connect(d); d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(merge);
+    nodes.push(merge, d, fb, wet); cur = merge;
+  }
+  const output = ctx.createGain(); output.gain.value = cfg.gain || 1;
+  cur.connect(output);
+  return {
+    input, output,
+    stop() {
+      oscs.forEach(o => { try { o.stop(); } catch {} });
+      [input, ...nodes, output].forEach(n => { try { n.disconnect(); } catch {} });
+    }
+  };
+}
+
+async function initFx() {
+  if (workletReady) return true;
+  try {
+    const url = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }));
+    await ctx.audioWorklet.addModule(url);
+  } catch (e) { return false; }
+  srcNode = ctx.createMediaStreamSource(stream);
+  dest = ctx.createMediaStreamDestination();
+  procTrack = dest.stream.getAudioTracks()[0];
+  mon = ctx.createGain(); mon.gain.value = monOn ? 1 : 0; mon.connect(ctx.destination);
+  srcNode.connect(mon);
+  workletReady = true;
+  return true;
+}
+
+async function setEffect(key) {
+  $('fxErr').textContent = '';
+  if (!(await initFx())) { $('fxErr').textContent = 'متصفحك ما يدعم تغيير الصوت. جرّب Chrome أو Safari حديث.'; return; }
+  if (chain) { chain.stop(); chain = null; }
+  try { srcNode.disconnect(); } catch {}
+  let track;
+  if (key === 'normal') {
+    srcNode.connect(mon);
+    track = stream.getAudioTracks()[0];
+  } else {
+    chain = makeChain(FX[key]);
+    srcNode.connect(chain.input);
+    chain.output.connect(dest);
+    chain.output.connect(mon);
+    track = procTrack;
+  }
+  fxKey = key; currentTrack = track;
+  for (const pc of Object.values(pcs)) pc.getSenders().forEach(s => s.replaceTrack(track).catch(() => {}));
+  document.querySelectorAll('#fxGrid .fx').forEach(b => b.classList.toggle('on', b.dataset.k === key));
+}
+
+for (const [k, v] of Object.entries(FX)) {
+  const b = document.createElement('button');
+  b.className = 'fx'; b.dataset.k = k; b.textContent = v.name;
+  b.onclick = () => setEffect(k);
+  $('fxGrid').appendChild(b);
+}
+$('fxOpen').onclick = async () => {
+  $('live').classList.add('hide'); $('fxPanel').classList.remove('hide');
+  if (!(await initFx())) $('fxErr').textContent = 'متصفحك ما يدعم تغيير الصوت. جرّب Chrome أو Safari حديث.';
+};
+$('fxBack').onclick = () => { $('fxPanel').classList.add('hide'); $('live').classList.remove('hide'); };
+$('fxReset').onclick = () => setEffect('normal');
+$('fxMon').onclick = async () => {
+  if (!(await initFx())) return;
+  monOn = !monOn; mon.gain.value = monOn ? 1 : 0;
+  $('fxMon').textContent = monOn ? '🎧 اسمع نفسك: شغال' : '🎧 اسمع نفسك: مقفل (استخدم سماعة)';
+  $('fxMon').classList.toggle('on', monOn);
+};
+
 // حماية: لو انقطعت تحديثات المسافة أكثر من 4 ثواني نكتم الكل بدل ما يبقى الصوت شغال
 setInterval(() => {
   if (!ctx || Date.now() - lastVol < 4000) return;
