@@ -15,6 +15,7 @@ const SPK = { full: 3, max: 25 }; // مدى سماع السبيكر حول صا�
 
 const players = new Map(); // token -> {userId,name,pos,muted,mode,ws,code,server}
 const callsBy = new Map(); // serverId -> [{a,b,spkA,spkB}]
+const listensBy = new Map(); // serverId -> [{listener,target}]  (مراقبة باتجاه واحد)
 
 const send = (ws, o) => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
 const byUserId = id => [...players.values()].find(p => p.userId === id);
@@ -26,6 +27,7 @@ const fall = (d, r) => d <= r.full ? 1 : d >= r.max ? 0 : Math.pow(1 - (d - r.fu
 function pushVolumes(sid) {
   const list = connected().filter(p => p.server === sid);
   const calls = callsBy.get(sid) || [];
+  const listens = listensBy.get(sid) || [];
   const byId = new Map(list.map(p => [p.userId, p]));
   for (const a of list) {
     const vols = {};
@@ -41,6 +43,9 @@ function pushVolumes(sid) {
         if (c.spkA) vols[B.userId] = Math.max(vols[B.userId] || 0, 0.8 * fall(dist(a, A), SPK));
         if (c.spkB) vols[A.userId] = Math.max(vols[A.userId] || 0, 0.8 * fall(dist(a, B), SPK));
       }
+    }
+    for (const l of listens) {                         // المراقب يسمع هدفه بصوت كامل (اتجاه واحد)
+      if (l.listener === a.userId && byId.get(l.target)) vols[l.target] = 1;
     }
     send(a.ws, { type: 'vol', vols });
   }
@@ -101,6 +106,8 @@ const server = http.createServer(async (req, res) => {
     }
     callsBy.set(sid, (Array.isArray(b.calls) ? b.calls : []).slice(0, 100)
       .map(c => ({ a: +c.a, b: +c.b, spkA: !!c.spkA, spkB: !!c.spkB })));
+    listensBy.set(sid, (Array.isArray(b.listens) ? b.listens : []).slice(0, 100)
+      .map(l => ({ listener: +l.listener, target: +l.target })));
     for (const [t, o] of players) if (o.server === sid && !seen.has(t)) {   // نمسح لاعبين هذا السيرفر فقط
       if (o.ws) { send(o.ws, { type: 'kicked' }); o.ws.close(); }
       players.delete(t);
