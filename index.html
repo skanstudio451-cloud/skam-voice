@@ -99,7 +99,15 @@ input.code:focus{border-color:var(--p)}
 <script>
 const $ = id => document.getElementById(id);
 let token = new URLSearchParams(location.search).get('t');
-const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+// STUN يكفي لأغلب الشبكات، لكن بعض الشبكات (خصوصاً الجوال) تحتاج TURN كي يتصل كل لاعبين ببعض.
+// Open Relay مجاني وعام (20GB/شهر)، لذا نجربه بعد STUN فقط كـ fallback.
+const ICE = { iceServers: [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+] };
 
 // ميل البطاقة 3D مع الماوس
 const wrap = document.querySelector('.wrap'), card = $('card');
@@ -201,6 +209,12 @@ function makePC(id) {
   const pc = new RTCPeerConnection(ICE); pcs[id] = pc;
   pc.addTrack(currentTrack || stream.getAudioTracks()[0], stream);   // الصوت الحالي (طبيعي أو معدّل)
   pc.onicecandidate = e => e.candidate && sig(id, { ice: e.candidate });
+  pc.onconnectionstatechange = () => {
+    if (pcs[id] !== pc) return;
+    if ((pc.connectionState === 'failed' || pc.connectionState === 'disconnected') && callers.has(id)) {
+      setTimeout(() => { if (pcs[id] === pc && pc.connectionState !== 'connected' && ws.readyState === 1) call(id).catch(() => {}); }, 2500);
+    }
+  };
   pc.ontrack = e => {
     dropAudio(id);
     const s = e.streams[0];
@@ -211,27 +225,49 @@ function makePC(id) {
   };
   return pc;
 }
-const sig = (to, data) => ws.send(JSON.stringify({ type: 'signal', to, data }));
+const sig = (to, data) => ws.readyState === 1 && ws.send(JSON.stringify({ type: 'signal', to, data }));
+const queues = {}, pendingIce = {}, callers = new Set();
+
 async function call(id) {
+  callers.add(id);
   const pc = makePC(id);
   await pc.setLocalDescription(await pc.createOffer());
   sig(id, { sdp: pc.localDescription });
 }
-async function onSignal(from, d) {
+
+// نعالج رسائل كل لاعب بالترتيب (بدون تداخل) ونحفظ ICE اللي يوصل قبل SDP — هذا كان سبب إن بعض الأزواج ما يسمعون بعض
+function onSignal(from, d) {
+  queues[from] = (queues[from] || Promise.resolve()).then(() => handleSignal(from, d)).catch(() => {});
+  return queues[from];
+}
+async function flushIce(id, pc) {
+  const list = pendingIce[id] || [];
+  pendingIce[id] = [];
+  for (const c of list) { try { await pc.addIceCandidate(c); } catch {} }
+}
+async function handleSignal(from, d) {
   let pc = pcs[from];
   if (d.sdp) {
     if (d.sdp.type === 'offer') {
+      callers.delete(from);
       pc = makePC(from);
       await pc.setRemoteDescription(d.sdp);
+      await flushIce(from, pc);
       await pc.setLocalDescription(await pc.createAnswer());
       sig(from, { sdp: pc.localDescription });
-    } else if (pc) await pc.setRemoteDescription(d.sdp);
-  } else if (d.ice && pc) { try { await pc.addIceCandidate(d.ice); } catch {} }
+    } else if (pc && pc.signalingState === 'have-local-offer') {
+      await pc.setRemoteDescription(d.sdp);
+      await flushIce(from, pc);
+    }
+  } else if (d.ice) {
+    if (pc && pc.remoteDescription) { try { await pc.addIceCandidate(d.ice); } catch {} }
+    else (pendingIce[from] = pendingIce[from] || []).push(d.ice);
+  }
 }
 function closePeer(id) {
   if (pcs[id]) { try { pcs[id].close(); } catch {} }
   dropAudio(id);
-  delete pcs[id]; delete vols[id]; delete names[id]; delete pmute[id];
+  delete pcs[id]; delete vols[id]; delete names[id]; delete pmute[id]; delete pendingIce[id]; delete queues[id]; callers.delete(id);
 }
 function applyVols() {
   for (const id in nodes) nodes[id].g.gain.setTargetAtTime(vols[id] ?? 0, ctx.currentTime, 0.1);
